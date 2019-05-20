@@ -2,14 +2,13 @@ extern crate proc_macro;
 
 use proc_macro::TokenStream;
 
-use proc_quote::quote;
+use proc_quote::{quote};
 use syn::{parse_macro_input, Token};
 
 struct Seq {
     name: syn::Ident,
     start: syn::LitInt,
     end: syn::LitInt,
-    body: syn::Expr,
 }
 
 impl syn::parse::Parse for Seq {
@@ -19,13 +18,11 @@ impl syn::parse::Parse for Seq {
         let start: syn::LitInt = input.parse()?;
         input.parse::<Token![..]>()?;
         let end: syn::LitInt = input.parse()?;
-        let body = input.parse::<syn::Expr>()?;
 
         Ok(Self {
             name,
             start,
             end,
-            body,
         })
     }
 }
