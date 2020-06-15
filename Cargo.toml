@@ -16,3 +16,4 @@ derive_builder = { path = "builder" }
 derive_debug = { path = "debug" }
 seq = { path = "seq" }
 sorted = { path = "sorted" }
+cargo-expand = "0.6.0"
