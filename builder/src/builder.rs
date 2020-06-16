@@ -16,8 +16,8 @@ fn impl_struct(input: &DeriveInput, data: &DataStruct) -> Result<TokenStream, an
             let arg = &t.path.segments;
 
             Some(quote! {
-                fn #ident(&mut self, #ident: #arg) -> &mut Self {
-                    self.#ident = Some(#ident);
+                fn #ident<'a>(&'a mut self, #ident: #arg) -> &'a mut Self {
+                    self.#ident = #ident.clone();
                     self
                 }
             })
@@ -28,19 +28,31 @@ fn impl_struct(input: &DeriveInput, data: &DataStruct) -> Result<TokenStream, an
     let fields = data.fields.iter().filter_map(|field| {
         if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
             let arg = &t.path.segments;
-            Some(quote! {#ident: Option<#arg>})
+            Some(quote! {#ident: #arg})
+        } else {
+            None
+        }
+    });
+    let builder_name = Ident::new(&format!("{}Builder", &input.ident), Span::call_site());
+    let build_fields = data.fields.iter().filter_map(|field| {
+        if let Some(ident) = &field.ident {
+            Some(quote! {#ident: self.#ident.clone()})
         } else {
             None
         }
     });
     let struct_name = &input.ident;
-    let builder_name = Ident::new(&format!("{}Builder", &input.ident), Span::call_site());
     Ok(quote! {
-         #[derive(Default, Debug)]
+         #[derive(Default, Debug, Clone)]
          pub struct #builder_name {
              #(#fields),*
          }
         impl #builder_name {
+            fn build(&mut self) -> Result<#struct_name, anyhow::Error>{
+                Ok(#struct_name{
+                    #(#build_fields),*
+                })
+            }
             #(#setters)*
         }
         impl #struct_name {
