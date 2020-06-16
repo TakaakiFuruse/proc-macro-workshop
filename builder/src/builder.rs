@@ -10,37 +10,55 @@ pub fn build(input: &DeriveInput) -> Result<TokenStream, anyhow::Error> {
     }
 }
 
-fn impl_struct(input: &DeriveInput, data: &DataStruct) -> Result<TokenStream, anyhow::Error> {
-    let setters = data.fields.iter().filter_map(|field| {
-        if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
-            let arg = &t.path.segments;
+macro_rules! extract {
+    ($member:ident, $body:expr) => {
+        fn $member<'a>(
+            data: &'a syn::DataStruct,
+        ) -> Vec<TokenStream>{
+            data.fields.iter().filter_map($body).collect::<Vec<TokenStream>>()
+        }
+    };
+}
 
-            Some(quote! {
-                fn #ident<'a>(&'a mut self, #ident: #arg) -> &'a mut Self {
-                    self.#ident = #ident.clone();
-                    self
-                }
-            })
-        } else {
-            None
-        }
-    });
-    let fields = data.fields.iter().filter_map(|field| {
-        if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
-            let arg = &t.path.segments;
-            Some(quote! {#ident: #arg})
-        } else {
-            None
-        }
-    });
+extract!(extract_setter, |field| {
+    if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
+        let arg = &t.path.segments;
+        Some(quote! {
+            fn #ident<'a>(&'a mut self, #ident: #arg) -> &'a mut Self {
+                self.#ident = #ident.clone();
+                self
+            }
+        })
+    } else {
+        None
+    }
+});
+
+extract!(extract_fields, |field| {
+    if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
+        let arg = &t.path.segments;
+        Some(quote! {#ident: #arg})
+    } else {
+        None
+    }
+});
+
+
+extract!(extract_builder_fields, |field| {
+    if let Some(ident) = &field.ident {
+        Some(quote! {#ident: self.#ident.clone()})
+    } else {
+        None
+    }
+});
+fn impl_struct(input: &DeriveInput, data: &DataStruct) -> Result<TokenStream, anyhow::Error> {
+    let setters = extract_setter(&data);
+
+    let fields = extract_fields(&data);
+
+    let build_fields = extract_builder_fields(&data);
+
     let builder_name = Ident::new(&format!("{}Builder", &input.ident), Span::call_site());
-    let build_fields = data.fields.iter().filter_map(|field| {
-        if let Some(ident) = &field.ident {
-            Some(quote! {#ident: self.#ident.clone()})
-        } else {
-            None
-        }
-    });
     let struct_name = &input.ident;
     Ok(quote! {
          #[derive(Default, Debug, Clone)]
