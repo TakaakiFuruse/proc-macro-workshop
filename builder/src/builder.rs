@@ -1,5 +1,5 @@
 use anyhow;
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
 use syn::{Data, DataStruct, DeriveInput};
 
@@ -12,36 +12,40 @@ pub fn build(input: &DeriveInput) -> Result<TokenStream, anyhow::Error> {
 
 fn impl_struct(input: &DeriveInput, data: &DataStruct) -> Result<TokenStream, anyhow::Error> {
     let setters = data.fields.iter().filter_map(|field| {
-        if let Some(ident) = &field.ident {
-            if let syn::Type::Path(t) = &field.ty {
-                let arg = &t.path.segments;
+        if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
+            let arg = &t.path.segments;
 
-                Some(quote! {
-                    fn #ident(&self, arg: #arg) {
-                    }
-                })
-            } else {
-                Some(quote! {
-                    fn #ident(&self) {
-                    }
-                })
-            }
+            Some(quote! {
+                fn #ident(&mut self, #ident: #arg) -> &mut Self {
+                    self.#ident = Some(#ident);
+                    self
+                }
+            })
+        } else {
+            None
+        }
+    });
+    let fields = data.fields.iter().filter_map(|field| {
+        if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
+            let arg = &t.path.segments;
+            Some(quote! {#ident: Option<#arg>})
         } else {
             None
         }
     });
     let struct_name = &input.ident;
+    let builder_name = Ident::new(&format!("{}Builder", &input.ident), Span::call_site());
     Ok(quote! {
-        impl #struct_name {
-            fn builder() -> #struct_name {
-                return #struct_name {
-                };
-            }
-            #(#setters)*,
+         #[derive(Default, Debug)]
+         pub struct #builder_name {
+             #(#fields),*
+         }
+        impl #builder_name {
+            #(#setters)*
         }
-        impl Default for #struct_name {
-            fn default() -> #struct_name{
-                #struct_name { }
+        impl #struct_name {
+            fn builder() -> #builder_name {
+                #builder_name::default()
             }
         }
     })

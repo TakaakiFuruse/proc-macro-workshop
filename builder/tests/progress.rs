@@ -1,4 +1,3 @@
-use derive_builder::Builder;
 
 #[test]
 fn tests() {
@@ -14,14 +13,15 @@ fn tests() {
     //t.pass("tests/09-redefined-prelude-types.rs");
 }
 
-#[test]
-fn test_01() {
+// #[test]
+// fn test_01() {
+// use derive_builder::Builder;
+//     #[derive(Builder)]
+//     pub struct Command {
+//         executable: String,
+//         args: Vec<String>,
+//         env: Vec<String>,
+//         current_dir: String,
+//     }
 
-    #[derive(Builder)]
-    pub struct Command {
-        executable: String,
-        args: Vec<String>,
-        env: Vec<String>,
-        current_dir: String,
-    }
-}
+// }
