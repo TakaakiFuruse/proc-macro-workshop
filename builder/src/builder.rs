@@ -1,7 +1,10 @@
 use anyhow;
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use syn::{Data, DataStruct, DeriveInput};
+use syn::{
+    AngleBracketedGenericArguments, Data, DataStruct, DeriveInput, GenericArgument, Path,
+    PathArguments, Type, TypePath,
+};
 
 pub fn build(input: &DeriveInput) -> Result<TokenStream, anyhow::Error> {
     match &input.data {
@@ -12,44 +15,87 @@ pub fn build(input: &DeriveInput) -> Result<TokenStream, anyhow::Error> {
 
 macro_rules! extract {
     ($member:ident, $body:expr) => {
-        fn $member<'a>(
-            data: &'a syn::DataStruct,
-        ) -> Vec<TokenStream>{
-            data.fields.iter().filter_map($body).collect::<Vec<TokenStream>>()
+        fn $member<'a>(data: &'a syn::DataStruct) -> Vec<TokenStream> {
+            data.fields
+                .iter()
+                .filter_map($body)
+                .collect::<Vec<TokenStream>>()
+        }
+    };
+}
+
+macro_rules! handle_option {
+    ($fn_name:ident, $stmt1: expr, $stmt2: expr) => {
+        fn $fn_name<'a>(field: &'a syn::Field) -> Option<TokenStream> {
+            if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
+                let arg = &t.path.segments;
+                if &arg[0].ident.to_string() == "Option" {
+                    if let PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+                        args,
+                        ..
+                    }) = &arg[0].arguments
+                    {
+                        if let GenericArgument::Type(Type::Path(TypePath { path, .. })) = &args[0] {
+                            $stmt1(path, ident)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    $stmt2(ident, arg)
+                }
+            } else {
+                None
+            }
         }
     };
 }
 
 extract!(extract_setter, |field| {
-    if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
-        let arg = &t.path.segments;
-        Some(quote! {
-            fn #ident<'a>(&'a mut self, #ident: #arg) -> &'a mut Self {
-                self.#ident = #ident.clone();
-                self
-            }
-        })
-    } else {
-        None
-    }
+    handle_option!(
+        handle_for_setters,
+        |path: &Path, ident| {
+            let a = &path.segments[0].ident;
+            Some(quote! {
+                fn #ident<'a>(&'a mut self, #ident: #a) -> &'a mut Self {
+                    self.#ident = Some(#ident.clone());
+                    self
+                }
+            })
+        },
+        |ident, arg| {
+            Some(quote! {
+                fn #ident<'a>(&'a mut self, #ident: #arg) -> &'a mut Self {
+                    self.#ident = Some(#ident.clone());
+                    self
+                }
+            })
+        }
+    );
+    handle_for_setters(field)
 });
 
 extract!(extract_fields, |field| {
-    if let (Some(ident), syn::Type::Path(t)) = (&field.ident, &field.ty) {
-        let arg = &t.path.segments;
-        Some(quote! {#ident: #arg})
-    } else {
-        None
-    }
+    handle_option!(
+        handle_for_fields,
+        |path: &Path, ident| {
+            let a = &path.segments[0].ident;
+            Some(quote! {#ident: Option<#a>})
+        },
+        |ident, arg| { Some(quote! {#ident: Option<#arg>}) }
+    );
+    handle_for_fields(field)
 });
 
-
 extract!(extract_builder_fields, |field| {
-    if let Some(ident) = &field.ident {
-        Some(quote! {#ident: self.#ident.clone()})
-    } else {
-        None
-    }
+    handle_option!(
+        handle_for_build,
+        |_: &Path, ident| { Some(quote! {#ident: self.#ident.clone()}) },
+        |ident, _| { Some(quote! {#ident: self.#ident.clone().unwrap()}) }
+    );
+    handle_for_build(field)
 });
 fn impl_struct(input: &DeriveInput, data: &DataStruct) -> Result<TokenStream, anyhow::Error> {
     let setters = extract_setter(&data);
